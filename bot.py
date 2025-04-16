@@ -3,12 +3,10 @@ import discord
 import random
 import aiohttp
 import requests
-import json
 import google.generativeai as genai
 from discord import app_commands
 from dotenv import load_dotenv
 import traceback
-import sys
 from datetime import datetime
 import asyncio
 import pathlib
