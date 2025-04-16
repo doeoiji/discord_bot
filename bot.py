@@ -56,6 +56,55 @@ except Exception as e:
 intents = discord.Intents.default()
 intents.message_content = True
 
+# Function to check if a message is asking about the bot's creator
+def is_asking_about_creator(message_content):
+    # Convert to lowercase for case-insensitive matching
+    message = message_content.lower()
+    
+    # Patterns that indicate someone is asking about the creator/owner
+    creator_patterns = [
+        "who created you", 
+        "who made you", 
+        "who developed you",
+        "who is your owner", 
+        "who is your creator",
+        "who owns you",
+        "who built you",
+        "who programmed you",
+        "your creator",
+        "your developer",
+        "your owner",
+        "who wrote you",
+        "who designed you"
+    ]
+    
+    # Check if any pattern matches
+    for pattern in creator_patterns:
+        if pattern in message:
+            return True
+            
+    return False
+
+# Function to check if channel name contains Airi variations
+def is_airi_channel(channel_name):
+    # Convert to lowercase for case-insensitive matching
+    name = channel_name.lower()
+    
+    # Patterns for Airi channel names
+    airi_patterns = [
+        "airi",
+        "ai-ri",
+        "chat-with-airi",
+        "airi-chatting"
+    ]
+    
+    # Check if any pattern is in the channel name
+    for pattern in airi_patterns:
+        if pattern in name:
+            return True
+            
+    return False
+
 # Create bot client
 class MyClient(discord.Client):
     def __init__(self):
@@ -194,6 +243,32 @@ class MyClient(discord.Client):
             # Skip empty messages
             if not query:
                 return
+            
+            # Check if asking about creator
+            if is_asking_about_creator(query):
+                creator_response = "A really boring and techy guy named Julkarnain created me. You can contact him here: https://facebook.com/julkarnainx"
+                
+                # Log the user's message
+                location_info = "Direct Message"
+                self.append_to_conversation_log(
+                    message.author.id,
+                    location_info,
+                    "USER",
+                    query
+                )
+                
+                # Send the creator response
+                await message.channel.send(creator_response)
+                
+                # Log the bot's response
+                self.append_to_conversation_log(
+                    message.author.id,
+                    location_info,
+                    "BOT",
+                    creator_response
+                )
+                
+                return
                 
             # Send "typing" indicator
             async with message.channel.typing():
@@ -265,6 +340,119 @@ class MyClient(discord.Client):
             # Return early for DMs to avoid checking other conditions
             return
             
+        # Check if the channel name contains Airi
+        if message.guild and is_airi_channel(message.channel.name):
+            # Process messages in Airi channels without requiring prefix, mention or reply
+            query = message.content.strip()
+            
+            # Skip empty messages
+            if not query:
+                return
+                
+            # Check if asking about creator
+            if is_asking_about_creator(query):
+                creator_response = "A really boring and techy guy named Julkarnain created me. You can contact him here: https://facebook.com/julkarnainx"
+                
+                # Get message location info
+                location_info = f"Server: {message.guild.name}, Channel: {message.channel.name} (Airi channel)"
+                
+                # Log the user's message
+                self.append_to_conversation_log(
+                    message.author.id,
+                    location_info,
+                    "USER",
+                    query
+                )
+                
+                # Send the creator response
+                await message.reply(creator_response)
+                
+                # Log the bot's response
+                self.append_to_conversation_log(
+                    message.author.id,
+                    location_info,
+                    "BOT",
+                    creator_response
+                )
+                
+                return
+                
+            # Skip messages with command prefixes, as these might be intended for other bots
+            if message.content.startswith(('/', '!', '?', '-', '>')):
+                return
+                
+            # Send "typing" indicator
+            async with message.channel.typing():
+                if ai_working:
+                    try:
+                        # Get message location info
+                        location_info = f"Server: {message.guild.name}, Channel: {message.channel.name} (Airi channel)"
+                        
+                        # Load this user's conversation history (universal)
+                        conversation_history = self.load_conversation_history(message.author.id)
+                        
+                        # Format for AI context
+                        context = self.format_conversation_for_ai(conversation_history)
+                        
+                        # Log the user's message before generating a response
+                        self.append_to_conversation_log(
+                            message.author.id,
+                            location_info,
+                            "USER",
+                            query
+                        )
+                        
+                        # Call Gemini API with conversation history included
+                        prompt = f"""You are responding as a friendly, casual person in a Discord chat.
+                        You're in a channel specifically for chatting with you.
+                        Keep your response conversational, relatable, and authentic, like a real friend would talk.
+                        Use some casual language, emoji, or slang where appropriate, but don't overdo it.
+                        Avoid sounding formal or robotic. Don't mention AI, models or prompts.
+                        
+                        I'll provide you with conversation history with this user, but DO NOT repeat or reference the 
+                        raw log format in your response. Your response should be natural and not quote timestamp entries.
+                        Do not include any timestamps or log markers like [2023-01-01 12:00:00] in your response.
+                        
+                        Here is the conversation history with this user for context only:
+                        {context}
+                        
+                        The user is currently messaging in {location_info}.
+                        
+                        Respond ONLY with your direct reply to: "{query}"
+                        Do not include or repeat the conversation history in your response.
+                        """
+                        
+                        response = gemini_model.generate_content(prompt)
+                        reply_text = response.text
+                        
+                        # Clean the response to remove any log-like content
+                        reply_text = self.clean_response(reply_text)
+                        
+                        # Trim if too long
+                        if len(reply_text) > 2000:
+                            reply_text = reply_text[:1997] + "..."
+                        
+                        # Send the response as a reply
+                        await message.reply(reply_text)
+                        
+                        # Log the bot's response
+                        self.append_to_conversation_log(
+                            message.author.id,
+                            location_info,
+                            "BOT",
+                            reply_text
+                        )
+                        
+                    except Exception as e:
+                        print(f"Error generating Airi channel response: {str(e)}")
+                        traceback.print_exc()
+                        await message.reply("Sorry, I'm having trouble thinking right now. Try again later?")
+                else:
+                    await message.reply("Sorry, I can't chat right now. Try again later?")
+                    
+            # Return early after processing in Airi channels
+            return
+            
         # Check if the message starts with "." (prefix for conversational responses)
         if message.content.startswith('.'):
             # Get the message content without the prefix
@@ -272,6 +460,37 @@ class MyClient(discord.Client):
             
             # Skip empty messages
             if not query:
+                return
+            
+            # Check if asking about creator
+            if is_asking_about_creator(query):
+                creator_response = "A really boring and techy guy named Julkarnain created me. You can contact him here: https://facebook.com/julkarnainx"
+                
+                # Get message location info
+                if message.guild:
+                    location_info = f"Server: {message.guild.name}, Channel: {message.channel.name}"
+                else:
+                    location_info = "Direct Message"
+                
+                # Log the user's message
+                self.append_to_conversation_log(
+                    message.author.id,
+                    location_info,
+                    "USER",
+                    query
+                )
+                
+                # Send the creator response
+                await message.reply(creator_response)
+                
+                # Log the bot's response
+                self.append_to_conversation_log(
+                    message.author.id,
+                    location_info,
+                    "BOT",
+                    creator_response
+                )
+                
                 return
                 
             # Send "typing" indicator
@@ -359,6 +578,37 @@ class MyClient(discord.Client):
             elif not query:
                 # If they just pinged the bot with no content, use their greeting as context
                 query = "hello"
+            
+            # Check if asking about creator
+            if is_asking_about_creator(query):
+                creator_response = "A really boring and techy guy named Julkarnain created me. You can contact him here: https://facebook.com/julkarnainx"
+                
+                # Get message location info
+                if message.guild:
+                    location_info = f"Server: {message.guild.name}, Channel: {message.channel.name}"
+                else:
+                    location_info = "Direct Message"
+                    
+                # Log the user's message
+                self.append_to_conversation_log(
+                    message.author.id,
+                    location_info,
+                    "USER",
+                    query
+                )
+                
+                # Send the creator response
+                await message.reply(creator_response)
+                
+                # Log the bot's response
+                self.append_to_conversation_log(
+                    message.author.id,
+                    location_info,
+                    "BOT",
+                    creator_response
+                )
+                
+                return
             
             # Send "typing" indicator
             async with message.channel.typing():
